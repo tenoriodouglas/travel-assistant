@@ -102,11 +102,11 @@ fun SettingsScreen(
         SectionCard(title = "Sobre") {
             InfoLine("App", "Travel Assistant")
             InfoLine("Versão", "1.0")
-            InfoLine("Feed", "Simulação de preços em tempo real")
+            InfoLine("Feed", "Preços reais (Travelpayouts)")
             Spacer(Modifier.height(8.dp))
             Text(
-                "Os preços exibidos são simulados para demonstração da interface. " +
-                    "A arquitetura já está pronta para conectar uma API real de preços de passagens.",
+                "O app usa apenas preços reais sob demanda. Configure o token do Travelpayouts " +
+                    "para habilitar. O intervalo acima é reservado para futuras atualizações automáticas.",
                 color = TextMuted,
                 fontSize = 12.sp,
             )

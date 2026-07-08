@@ -44,7 +44,6 @@ import com.travelassistant.app.data.model.RouteBoard
 import com.travelassistant.app.ui.components.ChangeChip
 import com.travelassistant.app.ui.components.ChartMode
 import com.travelassistant.app.ui.components.AirportSearchField
-import com.travelassistant.app.ui.components.LiveIndicator
 import com.travelassistant.app.ui.components.PriceChart
 import com.travelassistant.app.ui.components.RangeSelector
 import com.travelassistant.app.ui.components.Sparkline
@@ -83,7 +82,6 @@ fun HomeScreen(
     val origin by viewModel.origin.collectAsStateWithLifecycle()
     val destination by viewModel.destination.collectAsStateWithLifecycle()
     val range by viewModel.range.collectAsStateWithLifecycle()
-    val interval by viewModel.intervalSeconds.collectAsStateWithLifecycle()
     val state by viewModel.boardState.collectAsStateWithLifecycle()
 
     Column(
@@ -96,8 +94,6 @@ fun HomeScreen(
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Travel Assistant", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(10.dp))
-            LiveIndicator()
             Spacer(Modifier.weight(1f))
             Box(
                 modifier = Modifier
@@ -128,14 +124,10 @@ fun HomeScreen(
         Spacer(Modifier.height(20.dp))
         when (val s = state) {
             BoardUiState.Idle -> EmptyState()
+            BoardUiState.NeedsSetup -> SetupState()
             BoardUiState.Loading -> LoadingState()
-            is BoardUiState.Ready -> BoardContent(
-                board = s.board,
-                intervalSeconds = interval,
-                live = s.live,
-                source = s.source,
-                notice = s.notice,
-            )
+            is BoardUiState.Ready -> BoardContent(board = s.board)
+            is BoardUiState.Error -> ErrorState(message = s.message, onRetry = viewModel::refresh)
         }
         Spacer(Modifier.height(28.dp))
     }
@@ -249,27 +241,57 @@ private fun LoadingState() {
 }
 
 @Composable
-private fun BoardContent(
-    board: RouteBoard,
-    intervalSeconds: Int,
-    live: Boolean,
-    source: DataSource,
-    notice: String?,
-) {
-    PriceHeader(board, intervalSeconds, live, source)
-    if (notice != null) {
-        Spacer(Modifier.height(10.dp))
+private fun SetupState() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Surface)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("Dados reais não configurados", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
         Text(
-            text = notice,
-            color = Accent,
-            fontSize = 12.sp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(AccentDim)
-                .padding(10.dp),
+            "Este app mostra apenas preços reais. Configure o token do Travelpayouts " +
+                "(secret TRAVELPAYOUTS_TOKEN ou local.properties) e recompile para ver os preços.",
+            color = TextSecondary,
+            fontSize = 13.sp,
         )
     }
+}
+
+@Composable
+private fun ErrorState(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Surface)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("Sem preços para esta rota", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Text(message, color = TextSecondary, fontSize = 12.sp)
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = "Tentar de novo",
+            color = Background,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Up)
+                .clickable(onClick = onRetry)
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+        )
+    }
+}
+
+@Composable
+private fun BoardContent(board: RouteBoard) {
+    PriceHeader(board)
     Spacer(Modifier.height(16.dp))
     StatsRow(board)
     Spacer(Modifier.height(16.dp))
@@ -279,7 +301,7 @@ private fun BoardContent(
 }
 
 @Composable
-private fun PriceHeader(board: RouteBoard, intervalSeconds: Int, live: Boolean, source: DataSource) {
+private fun PriceHeader(board: RouteBoard) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -288,12 +310,7 @@ private fun PriceHeader(board: RouteBoard, intervalSeconds: Int, live: Boolean, 
                 fontSize = 13.sp,
             )
             Spacer(Modifier.width(8.dp))
-            val real = source == DataSource.REAL
-            Tag(
-                text = if (real) "DADOS REAIS" else "SIMULADO",
-                color = if (real) Up else Accent,
-                background = if (real) SurfaceElevated else AccentDim,
-            )
+            Tag(text = "DADOS REAIS", color = Up, background = SurfaceElevated)
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -318,11 +335,7 @@ private fun PriceHeader(board: RouteBoard, intervalSeconds: Int, live: Boolean, 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("menor preço • ${board.range.label}", color = TextMuted, fontSize = 12.sp)
             Spacer(Modifier.width(10.dp))
-            if (live) {
-                LiveIndicator(label = "${intervalSeconds}s")
-            } else {
-                Text("sob demanda", color = TextMuted, fontSize = 12.sp)
-            }
+            Text("sob demanda", color = TextMuted, fontSize = 12.sp)
         }
     }
 }
