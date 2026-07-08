@@ -39,13 +39,15 @@ class MarketRepository(
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
     private val clock: () -> Long = { System.currentTimeMillis() },
-) {
+) : PriceRepository {
+    override val isLive: Boolean = true
+
     private val random = Random(1_984)
     private val pairs = LinkedHashMap<String, PairState>()
 
     private val _lastTick = MutableStateFlow(clock())
     /** Emits the timestamp of the latest feed update; the UI observes it to recompute boards. */
-    val lastTick: StateFlow<Long> = _lastTick.asStateFlow()
+    override val lastTick: StateFlow<Long> = _lastTick.asStateFlow()
 
     private var started = false
 
@@ -61,13 +63,16 @@ class MarketRepository(
     }
 
     /** Force an immediate feed advance (refresh button). */
-    fun refreshNow() {
+    override fun refreshNow() {
         scope.launch { tick() }
     }
 
+    override suspend fun board(origin: Airport, destination: Airport, range: TimeRange): RouteBoard =
+        snapshot(origin, destination, range)
+
     /** Snapshot board for the given query; re-read on every [lastTick] to stay live. */
     @Synchronized
-    fun board(origin: Airport, destination: Airport, range: TimeRange): RouteBoard {
+    private fun snapshot(origin: Airport, destination: Airport, range: TimeRange): RouteBoard {
         val key = "${origin.code}-${destination.code}"
         val state = pairs.getOrPut(key) { PairState(Route(origin, destination), random) }
         return state.board(range, clock())

@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // Release signing is driven by key.properties at the repo root. It is only present
@@ -14,6 +15,20 @@ val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) load(FileInputStream(keystorePropertiesFile))
 }
 val hasReleaseKeystore = keystorePropertiesFile.exists()
+
+// Amadeus API credentials come from local.properties (git-ignored) or the environment,
+// never from source. Absent keys => the app runs on the simulated feed.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) load(FileInputStream(f))
+}
+fun secret(propKey: String, envKey: String): String =
+    (localProps.getProperty(propKey) ?: System.getenv(envKey) ?: "").trim()
+
+val amadeusClientId = secret("amadeus.clientId", "AMADEUS_CLIENT_ID")
+val amadeusClientSecret = secret("amadeus.clientSecret", "AMADEUS_CLIENT_SECRET")
+// "test" (free sandbox) or "production". Defaults to test.
+val amadeusEnv = (localProps.getProperty("amadeus.env") ?: System.getenv("AMADEUS_ENV") ?: "test").trim()
 
 android {
     namespace = "com.travelassistant.app"
@@ -31,6 +46,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        buildConfigField("String", "AMADEUS_CLIENT_ID", "\"$amadeusClientId\"")
+        buildConfigField("String", "AMADEUS_CLIENT_SECRET", "\"$amadeusClientSecret\"")
+        buildConfigField("String", "AMADEUS_ENV", "\"$amadeusEnv\"")
     }
 
     signingConfigs {
@@ -69,6 +88,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -87,5 +107,6 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
     debugImplementation(libs.androidx.ui.tooling)
 }

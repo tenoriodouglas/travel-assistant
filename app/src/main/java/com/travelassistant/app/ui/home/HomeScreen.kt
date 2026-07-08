@@ -84,7 +84,7 @@ fun HomeScreen(
     val destination by viewModel.destination.collectAsStateWithLifecycle()
     val range by viewModel.range.collectAsStateWithLifecycle()
     val interval by viewModel.intervalSeconds.collectAsStateWithLifecycle()
-    val board by viewModel.board.collectAsStateWithLifecycle()
+    val state by viewModel.boardState.collectAsStateWithLifecycle()
 
     Column(
         modifier = modifier
@@ -126,11 +126,16 @@ fun HomeScreen(
         PopularRow(onPick = viewModel::pickPopular)
 
         Spacer(Modifier.height(20.dp))
-        val current = board
-        if (current == null) {
-            EmptyState()
-        } else {
-            BoardContent(board = current, intervalSeconds = interval)
+        when (val s = state) {
+            BoardUiState.Idle -> EmptyState()
+            BoardUiState.Loading -> LoadingState()
+            is BoardUiState.Ready -> BoardContent(
+                board = s.board,
+                intervalSeconds = interval,
+                live = s.live,
+                source = s.source,
+                notice = s.notice,
+            )
         }
         Spacer(Modifier.height(28.dp))
     }
@@ -228,8 +233,43 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun BoardContent(board: RouteBoard, intervalSeconds: Int) {
-    PriceHeader(board, intervalSeconds)
+private fun LoadingState() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Surface)
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(color = Up)
+        Spacer(Modifier.height(12.dp))
+        Text("Buscando preços…", color = TextSecondary, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun BoardContent(
+    board: RouteBoard,
+    intervalSeconds: Int,
+    live: Boolean,
+    source: DataSource,
+    notice: String?,
+) {
+    PriceHeader(board, intervalSeconds, live, source)
+    if (notice != null) {
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = notice,
+            color = Accent,
+            fontSize = 12.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(AccentDim)
+                .padding(10.dp),
+        )
+    }
     Spacer(Modifier.height(16.dp))
     StatsRow(board)
     Spacer(Modifier.height(16.dp))
@@ -239,13 +279,22 @@ private fun BoardContent(board: RouteBoard, intervalSeconds: Int) {
 }
 
 @Composable
-private fun PriceHeader(board: RouteBoard, intervalSeconds: Int) {
+private fun PriceHeader(board: RouteBoard, intervalSeconds: Int, live: Boolean, source: DataSource) {
     Column {
-        Text(
-            text = "${board.route.origin.city} → ${board.route.destination.city}",
-            color = TextSecondary,
-            fontSize = 13.sp,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "${board.route.origin.city} → ${board.route.destination.city}",
+                color = TextSecondary,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.width(8.dp))
+            val real = source == DataSource.REAL
+            Tag(
+                text = if (real) "DADOS REAIS" else "SIMULADO",
+                color = if (real) Up else Accent,
+                background = if (real) SurfaceElevated else AccentDim,
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             text = formatMoneyPrecise(board.price, board.route.currency),
@@ -269,7 +318,11 @@ private fun PriceHeader(board: RouteBoard, intervalSeconds: Int) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("menor preço • ${board.range.label}", color = TextMuted, fontSize = 12.sp)
             Spacer(Modifier.width(10.dp))
-            LiveIndicator(label = "${intervalSeconds}s")
+            if (live) {
+                LiveIndicator(label = "${intervalSeconds}s")
+            } else {
+                Text("sob demanda", color = TextMuted, fontSize = 12.sp)
+            }
         }
     }
 }
