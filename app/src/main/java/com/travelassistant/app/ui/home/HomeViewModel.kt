@@ -10,6 +10,7 @@ import com.travelassistant.app.data.Airports
 import com.travelassistant.app.data.PriceRepository
 import com.travelassistant.app.data.SettingsRepository
 import com.travelassistant.app.data.model.Airport
+import com.travelassistant.app.data.model.RouteBoard
 import com.travelassistant.app.data.model.TimeRange
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
