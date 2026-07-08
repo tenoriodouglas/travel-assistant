@@ -8,3 +8,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Signing — NEVER commit the keystore or its passwords.
+key.properties
+*.jks
+*.keystore

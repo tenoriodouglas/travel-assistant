@@ -1,0 +1,78 @@
+name: Deploy to Google Play
+
+# Publica na Play Store a cada merge na main (todo push na main = PR mergeado).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: play-store-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Degradação graciosa: sem esses secrets, o build ainda roda e sobe o
+      # artifact; só o que depende deles é pulado.
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+      HAS_PLAY_SA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # Keystore decodificado na raiz do projeto — onde rootProject.file()
+      # do app/build.gradle.kts procura (storeFile=upload-keystore.jks).
+      - name: Decode keystore
+        if: env.HAS_KEYSTORE == 'true'
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > upload-keystore.jks
+
+      - name: Create key.properties
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          cat > key.properties << EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      # versionCode = run_number + offset (acima dos uploads manuais já feitos).
+      - name: Build release AAB
+        run: ./gradlew :app:bundleRelease -PversionCodeOverride=$((${{ github.run_number }} + 100))
+
+      # AAB fica disponível para download em qualquer caso.
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: Deploy to Google Play (Alpha — teste fechado)
+        if: env.HAS_PLAY_SA == 'true' && env.HAS_KEYSTORE == 'true'
+        uses: r0adkll/upload-google-play@v1
+        env:
+          # Silencia DeprecationWarning internos do Node (punycode, url.parse).
+          NODE_OPTIONS: --no-deprecation
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.travelassistant.app
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          tracks: alpha
+          status: completed
+
+      - name: Skip deploy notice
+        if: env.HAS_PLAY_SA != 'true' || env.HAS_KEYSTORE != 'true'
+        run: |
+          echo "::warning::Deploy pulado. Configure os secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_PASSWORD, KEY_ALIAS e PLAY_SERVICE_ACCOUNT_JSON. O AAB foi gerado e está disponível como artifact."
