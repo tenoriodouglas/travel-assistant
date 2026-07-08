@@ -15,6 +15,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # When the secret is set, the debug APK is built with real Travelpayouts data.
+      HAS_TP: ${{ secrets.TRAVELPAYOUTS_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +29,11 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
+
+      # Injects the token from repo secrets into local.properties (git-ignored).
+      - name: Configure Travelpayouts token
+        if: env.HAS_TP == 'true'
+        run: echo "travelpayouts.token=${{ secrets.TRAVELPAYOUTS_TOKEN }}" >> local.properties
 
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug

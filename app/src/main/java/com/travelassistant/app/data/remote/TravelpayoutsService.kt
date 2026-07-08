@@ -29,7 +29,7 @@ class TravelpayoutsService(private val token: String) {
         val url = "$base/aviasales/v3/prices_for_dates" +
             "?origin=${enc(origin)}&destination=${enc(destination)}" +
             "&departure_at=${enc(month)}&currency=${enc(currency)}" +
-            "&one_way=true&sorting=price&limit=1000&market=br"
+            "&one_way=true&sorting=price&limit=1000&market=br&token=${enc(token)}"
         val body = httpGet(url)
         val parsed = json.decodeFromString(PricesForDatesResponse.serializer(), body)
         if (!parsed.success) throw IOException("Travelpayouts: ${parsed.error ?: "resposta sem sucesso"}")
