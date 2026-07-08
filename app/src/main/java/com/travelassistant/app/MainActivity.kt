@@ -5,10 +5,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,11 +21,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import androidx.navigation.NavType
-import com.travelassistant.app.ui.detail.ROUTE_ID_ARG
-import com.travelassistant.app.ui.detail.RouteDetailScreen
-import com.travelassistant.app.ui.markets.MarketsScreen
+import com.travelassistant.app.ui.home.HomeScreen
 import com.travelassistant.app.ui.navigation.Destination
 import com.travelassistant.app.ui.navigation.TopLevelDestination
 import com.travelassistant.app.ui.settings.SettingsScreen
@@ -51,39 +47,18 @@ class MainActivity : ComponentActivity() {
 private fun TravelAssistantApp() {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = currentRoute == Destination.Markets.route ||
-        currentRoute == Destination.Settings.route
 
     Scaffold(
         containerColor = Background,
-        bottomBar = {
-            if (showBottomBar) {
-                BottomBar(navController, backStackEntry?.destination)
-            }
-        },
+        bottomBar = { BottomBar(navController, backStackEntry?.destination) },
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = Destination.Markets.route,
+            startDestination = Destination.Home.route,
             modifier = Modifier.padding(padding),
         ) {
-            composable(Destination.Markets.route) {
-                MarketsScreen(
-                    onRouteClick = { routeId ->
-                        navController.navigate(Destination.Detail.create(routeId))
-                    },
-                )
-            }
-            composable(Destination.Settings.route) {
-                SettingsScreen()
-            }
-            composable(
-                route = Destination.Detail.route,
-                arguments = listOf(navArgument(ROUTE_ID_ARG) { type = NavType.StringType }),
-            ) {
-                RouteDetailScreen(onBack = { navController.popBackStack() })
-            }
+            composable(Destination.Home.route) { HomeScreen() }
+            composable(Destination.Settings.route) { SettingsScreen() }
         }
     }
 }
@@ -102,9 +77,7 @@ private fun BottomBar(
                 selected = selected,
                 onClick = {
                     navController.navigate(item.destination.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                         launchSingleTop = true
                         restoreState = true
                     }

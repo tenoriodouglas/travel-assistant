@@ -1,18 +1,36 @@
 package com.travelassistant.app.data.model
 
-/** A tracked origin -> destination route, the "trading pair" of the app. */
-data class Route(
-    val id: String,
-    val origin: String,
-    val destination: String,
-    val originCity: String,
-    val destinationCity: String,
-    val currency: String = "R$",
+/** An airport / city the user can pick as origin or destination. */
+data class Airport(
+    val code: String,       // IATA, e.g. "GRU"
+    val city: String,       // e.g. "São Paulo"
+    val country: String,    // e.g. "Brasil"
+    val countryCode: String, // e.g. "BR"
+    val keywords: String = "", // extra search terms (accent-free aliases)
 ) {
-    val pair: String get() = "$origin/$destination"
+    val label: String get() = "$city ($code)"
 }
 
-/** Kind of price source shown on the breakdown. */
+/** A directional origin -> destination pair (the app's "trading pair"). */
+data class Route(
+    val origin: Airport,
+    val destination: Airport,
+    val currency: String = "R$",
+) {
+    val pair: String get() = "${origin.code}/${destination.code}"
+    val id: String get() = "${origin.code}-${destination.code}"
+}
+
+/** Future-departure window, chosen with crypto-style range buttons. */
+enum class TimeRange(val label: String, val days: Int, val buckets: Int) {
+    D7("7D", 7, 7),
+    D15("15D", 15, 15),
+    M1("1M", 30, 15),
+    M3("3M", 90, 18),
+    M6("6M", 180, 18),
+    Y1("1A", 360, 24),
+}
+
 enum class ProviderKind { AIRLINE, PLATFORM }
 
 /** An airline or a ticket-buying platform whose price we track. */
@@ -28,7 +46,7 @@ data class PricePoint(
     val price: Double,
 )
 
-/** OHLC candle aggregated over one refresh interval, crypto-chart style. */
+/** OHLC candle aggregated over one bucket of future departure dates. */
 data class Candle(
     val time: Long,
     val open: Double,
@@ -39,7 +57,7 @@ data class Candle(
     val isBullish: Boolean get() = close >= open
 }
 
-/** Current quote for one provider on a route. */
+/** Current quote for one provider on a route (min price in the window + trend). */
 data class ProviderQuote(
     val provider: Provider,
     val price: Double,
@@ -47,28 +65,26 @@ data class ProviderQuote(
     val spark: List<Double>,
 )
 
-/** Row model for the markets list. */
-data class RouteMarket(
+/**
+ * Everything shown for the selected origin -> destination + time range.
+ * Candles are price-by-future-departure-date buckets; the header numbers
+ * summarize the selected window. Recomputed live on every feed tick.
+ */
+data class RouteBoard(
     val route: Route,
-    val price: Double,
-    val openPrice: Double,
+    val range: TimeRange,
+    val candles: List<Candle>,
+    val xLabels: List<String>,      // departure date label per candle (dd/MM)
+    val price: Double,              // cheapest price in the window (actionable)
+    val openPrice: Double,          // window reference at session start
     val high: Double,
     val low: Double,
-    val changePct: Double,
-    val spark: List<Double>,
+    val changePct: Double,          // vs session-open reference for this range
+    val cheapestDateLabel: String,  // best future departure date in the window
+    val quotes: List<ProviderQuote>,
     val lastUpdated: Long,
 ) {
-    val changeAbs: Double get() = price - openPrice
     val isUp: Boolean get() = changePct >= 0.0
-}
-
-/** Full detail model for a single route. */
-data class RouteDetail(
-    val market: RouteMarket,
-    val candles: List<Candle>,
-    val line: List<PricePoint>,
-    val quotes: List<ProviderQuote>,
-) {
-    /** Cheapest provider = the "best buy" signal. */
+    val changeAbs: Double get() = price - openPrice
     val bestQuote: ProviderQuote? get() = quotes.minByOrNull { it.price }
 }

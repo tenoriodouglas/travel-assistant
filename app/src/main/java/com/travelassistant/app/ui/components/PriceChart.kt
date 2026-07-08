@@ -12,7 +12,6 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -27,20 +26,25 @@ import kotlin.math.max
 
 enum class ChartMode { CANDLES, LINE }
 
-/** Full price chart: candlesticks or a filled line, with a price grid and axis labels. */
+/**
+ * Price chart for future departure dates: candlesticks or a filled line, with a price
+ * grid (right axis) and departure-date labels (bottom axis).
+ */
 @Composable
 fun PriceChart(
     candles: List<Candle>,
     mode: ChartMode,
     modifier: Modifier = Modifier,
+    xLabels: List<String> = emptyList(),
 ) {
     val measurer = rememberTextMeasurer()
     val labelStyle = TextStyle(color = TextMuted, fontSize = 10.sp)
     Canvas(modifier = modifier) {
         if (candles.size < 2) return@Canvas
         val axisWidth = 64f
+        val bottomAxis = if (xLabels.isEmpty()) 0f else 30f
         val plotWidth = size.width - axisWidth
-        val plotHeight = size.height
+        val plotHeight = size.height - bottomAxis
         var minP = candles.minOf { it.low }
         var maxP = candles.maxOf { it.high }
         val pad = (maxP - minP).takeIf { it > 0 }?.times(0.08) ?: 1.0
@@ -63,8 +67,7 @@ fun PriceChart(
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 8f)),
             )
             val price = maxP - (range / gridLines * i)
-            val text = "%,.0f".format(price)
-            val layout = measurer.measure(text, labelStyle)
+            val layout = measurer.measure("%,.0f".format(price), labelStyle)
             drawText(
                 textLayoutResult = layout,
                 topLeft = Offset(
@@ -75,8 +78,28 @@ fun PriceChart(
         }
 
         when (mode) {
-            ChartMode.LINE -> drawLineChart(candles, plotWidth, ::yFor)
+            ChartMode.LINE -> drawLineChart(candles, plotWidth, plotHeight, ::yFor)
             ChartMode.CANDLES -> drawCandles(candles, plotWidth, ::yFor)
+        }
+
+        // ---- Bottom departure-date labels (a sparse subset to avoid crowding) ----
+        if (xLabels.isNotEmpty()) {
+            val slots = 4
+            for (s in 0..slots) {
+                val idx = (xLabels.size - 1) * s / slots
+                val label = xLabels.getOrNull(idx) ?: continue
+                val layout = measurer.measure(label, labelStyle)
+                val cx = plotWidth * s / slots
+                val x = when (s) {
+                    0 -> 0f
+                    slots -> (plotWidth - layout.size.width).coerceAtLeast(0f)
+                    else -> cx - layout.size.width / 2f
+                }
+                drawText(
+                    textLayoutResult = layout,
+                    topLeft = Offset(x, plotHeight + 8f),
+                )
+            }
         }
     }
 }
@@ -91,14 +114,12 @@ private fun DrawScope.drawCandles(
     candles.forEachIndexed { i, c ->
         val cx = slot * i + slot / 2f
         val color = if (c.isBullish) Up else Down
-        // Wick
         drawLine(
             color = color,
             start = Offset(cx, yFor(c.high)),
             end = Offset(cx, yFor(c.low)),
             strokeWidth = max(1f, bodyWidth * 0.14f),
         )
-        // Body
         val top = yFor(max(c.open, c.close))
         val bottom = yFor(minOf(c.open, c.close))
         val height = max(1.5f, bottom - top)
@@ -114,6 +135,7 @@ private fun DrawScope.drawCandles(
 private fun DrawScope.drawLineChart(
     candles: List<Candle>,
     plotWidth: Float,
+    plotHeight: Float,
     yFor: (Double) -> Float,
 ) {
     val stepX = plotWidth / (candles.size - 1)
@@ -127,19 +149,16 @@ private fun DrawScope.drawLineChart(
     }
     val fill = Path().apply {
         addPath(line)
-        lineTo(plotWidth, size.height)
-        lineTo(0f, size.height)
+        lineTo(plotWidth, plotHeight)
+        lineTo(0f, plotHeight)
         close()
     }
     drawPath(
         path = fill,
-        brush = Brush.verticalGradient(
-            listOf(color.copy(alpha = 0.28f), Color.Transparent),
-        ),
+        brush = Brush.verticalGradient(listOf(color.copy(alpha = 0.28f), Color.Transparent)),
         style = Fill,
     )
     drawPath(path = line, color = color, style = Stroke(width = 2.5.dp.toPx()))
-    // Last-price marker
     val lastX = x(candles.size - 1)
     val lastY = yFor(candles.last().close)
     drawCircle(color = color.copy(alpha = 0.25f), radius = 7.dp.toPx(), center = Offset(lastX, lastY))

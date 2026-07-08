@@ -1,13 +1,13 @@
 package com.travelassistant.app.data
 
+import com.travelassistant.app.data.model.Airport
 import com.travelassistant.app.data.model.Candle
-import com.travelassistant.app.data.model.PricePoint
 import com.travelassistant.app.data.model.Provider
 import com.travelassistant.app.data.model.ProviderKind
 import com.travelassistant.app.data.model.ProviderQuote
 import com.travelassistant.app.data.model.Route
-import com.travelassistant.app.data.model.RouteDetail
-import com.travelassistant.app.data.model.RouteMarket
+import com.travelassistant.app.data.model.RouteBoard
+import com.travelassistant.app.data.model.TimeRange
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -17,32 +17,34 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import kotlin.math.PI
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * In-memory simulated market that behaves like a live price feed. Each route holds a
- * running OHLC candle series and a set of provider quotes (airlines + platforms) that
- * evolve with a bounded random walk on every [tick]. The cadence of ticks is driven by
- * the user-configurable refresh interval from [SettingsRepository].
+ * In-memory simulated market for arbitrary origin -> destination pairs. For each pair the
+ * user opens, it lazily builds a per-future-day price curve (seasonal baseline + bounded
+ * random walk) and advances it on every [tick]; the cadence is the user-configurable feed
+ * interval. [board] then buckets those future days into OHLC candles for the selected range.
  *
- * The architecture (repository exposing StateFlows advanced by a single ticking loop)
- * is API-shaped: swapping the random walk for a real pricing API only touches [tick].
+ * The random walk is a stand-in for a real pricing API (Amadeus / Google Flights via SerpApi
+ * / Travelpayouts). Wiring one in only means replacing how [PairState.daily] is populated.
  */
 class MarketRepository(
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
-    private val random = Random(42)
-    private val states: List<RouteState> = seedRoutes().map { RouteState(it) }
+    private val random = Random(1_984)
+    private val pairs = LinkedHashMap<String, PairState>()
 
-    private val _markets = MutableStateFlow(states.map { it.toMarket() })
-    val markets: StateFlow<List<RouteMarket>> = _markets.asStateFlow()
-
-    /** Emits the timestamp of the latest feed update; the UI observes it to pulse "LIVE". */
     private val _lastTick = MutableStateFlow(clock())
+    /** Emits the timestamp of the latest feed update; the UI observes it to recompute boards. */
     val lastTick: StateFlow<Long> = _lastTick.asStateFlow()
 
     private var started = false
@@ -58,20 +60,23 @@ class MarketRepository(
         }
     }
 
-    /** Force an immediate feed advance (pull-to-refresh / refresh button). */
+    /** Force an immediate feed advance (refresh button). */
     fun refreshNow() {
         scope.launch { tick() }
     }
 
-    /** Latest computed detail for a route, or null if unknown. Re-read on each [lastTick]. */
-    fun detailSnapshot(routeId: String): RouteDetail? =
-        states.firstOrNull { it.route.id == routeId }?.toDetail()
+    /** Snapshot board for the given query; re-read on every [lastTick] to stay live. */
+    @Synchronized
+    fun board(origin: Airport, destination: Airport, range: TimeRange): RouteBoard {
+        val key = "${origin.code}-${destination.code}"
+        val state = pairs.getOrPut(key) { PairState(Route(origin, destination), random) }
+        return state.board(range, clock())
+    }
 
+    @Synchronized
     private fun tick() {
-        val now = clock()
-        states.forEach { it.advance(random, now) }
-        _markets.value = states.map { it.toMarket() }
-        _lastTick.value = now
+        pairs.values.forEach { it.advance(random) }
+        _lastTick.value = clock()
     }
 
     private fun tickingFlow(intervalSeconds: Int) = flow {
@@ -84,140 +89,169 @@ class MarketRepository(
 
     // ---- Simulation state --------------------------------------------------
 
-    private class RouteState(val route: Route) {
+    private class PairState(val route: Route, seedRandom: Random) {
+        private val base: Double = basePrice(route)
+        private val baseline = DoubleArray(DAYS)
+        private val daily = DoubleArray(DAYS)
         private val providers: List<ProviderSim>
-        private val candles = ArrayDeque<Candle>()
-        private var base: Double
+        private val openByRange = HashMap<TimeRange, Double>()
 
         init {
-            base = SEED_PRICES[route.id] ?: 1800.0
-            val warm = Random(route.id.hashCode())
-            // Backfill history so the chart opens with context, not a flat line.
-            val start = System.currentTimeMillis() - HISTORY * 60_000L
-            var price = base
-            for (i in 0 until HISTORY) {
-                val open = price
-                val drift = (warm.nextDouble() - 0.48) * base * 0.012
-                price = max(base * 0.6, open + drift)
-                val hi = max(open, price) + warm.nextDouble() * base * 0.004
-                val lo = min(open, price) - warm.nextDouble() * base * 0.004
-                candles.addLast(Candle(start + i * 60_000L, open, hi, lo, price))
+            val seed = Random(route.id.hashCode())
+            val weekPhase = seed.nextDouble() * 2 * PI
+            val seasonPhase = seed.nextDouble() * 2 * PI
+            for (day in 0 until DAYS) {
+                baseline[day] = seasonalBaseline(day, weekPhase, seasonPhase)
+                daily[day] = baseline[day] * (0.98 + seed.nextDouble() * 0.04)
             }
-            base = price
-            providers = providerCatalog(route).map { (p, _) -> ProviderSim(p, price) }
-            providers.forEach { it.reset(price, warm) }
+            providers = providerCatalog(route).map { p ->
+                ProviderSim(p, 0.90 + seed.nextDouble() * 0.18)
+            }
         }
 
-        fun advance(random: Random, now: Long) {
-            val prev = candles.lastOrNull()?.close ?: base
-            val drift = (random.nextDouble() - 0.49) * prev * 0.02
-            val close = max(prev * 0.55, prev + drift)
-            val hi = max(prev, close) + random.nextDouble() * prev * 0.006
-            val lo = min(prev, close) - random.nextDouble() * prev * 0.006
-            candles.addLast(Candle(now, prev, hi, lo, close))
-            while (candles.size > HISTORY) candles.removeFirst()
-            providers.forEach { it.advance(random, close) }
-            base = close
+        private fun seasonalBaseline(day: Int, weekPhase: Double, seasonPhase: Double): Double {
+            val nearTermPremium = if (day < 14) 0.18 * (1 - day / 14.0) else 0.0
+            val weekly = 0.04 * sin(day * 2 * PI / 7 + weekPhase)
+            val seasonal = 0.10 * sin(day * 2 * PI / 60 + seasonPhase)
+            val farOut = 0.05 * (day.toDouble() / DAYS)
+            val factor = 1.0 + nearTermPremium + weekly + seasonal + farOut
+            return max(base * 0.5, base * factor)
         }
 
-        fun toMarket(): RouteMarket {
-            val window = candles.takeLast(WINDOW)
-            val open = window.firstOrNull()?.open ?: base
-            val price = candles.lastOrNull()?.close ?: base
-            val high = window.maxOfOrNull { it.high } ?: price
-            val low = window.minOfOrNull { it.low } ?: price
-            val changePct = if (open != 0.0) (price - open) / open * 100.0 else 0.0
-            return RouteMarket(
+        fun advance(random: Random) {
+            for (day in 0 until DAYS) {
+                val reversion = (baseline[day] - daily[day]) * 0.15
+                val jitter = (random.nextDouble() - 0.5) * base * 0.012
+                daily[day] = max(base * 0.4, daily[day] + reversion + jitter)
+            }
+            providers.forEach { it.advance(random) }
+        }
+
+        fun board(range: TimeRange, now: Long): RouteBoard {
+            val days = min(range.days, DAYS - 1)
+            val today = LocalDate.now()
+            val (candles, xLabels) = buildCandles(range, days, now, today)
+
+            var cheapest = Double.MAX_VALUE
+            var cheapestDay = 0
+            var highest = Double.MIN_VALUE
+            for (day in 0 until days) {
+                val p = daily[day]
+                if (p < cheapest) { cheapest = p; cheapestDay = day }
+                if (p > highest) highest = p
+            }
+            val open = openByRange.getOrPut(range) { cheapest }
+            val changePct = if (open != 0.0) (cheapest - open) / open * 100.0 else 0.0
+
+            return RouteBoard(
                 route = route,
-                price = price,
+                range = range,
+                candles = candles,
+                xLabels = xLabels,
+                price = cheapest,
                 openPrice = open,
-                high = high,
-                low = low,
+                high = highest,
+                low = cheapest,
                 changePct = changePct,
-                spark = window.map { it.close },
-                lastUpdated = candles.lastOrNull()?.time ?: System.currentTimeMillis(),
+                cheapestDateLabel = today.plusDays(cheapestDay.toLong()).format(DAY_MONTH),
+                quotes = providers.map { it.quote(daily, days) }.sortedBy { it.price },
+                lastUpdated = now,
             )
         }
 
-        fun toDetail(): RouteDetail {
-            val candleList = candles.toList()
-            return RouteDetail(
-                market = toMarket(),
-                candles = candleList,
-                line = candleList.map { PricePoint(it.time, it.close) },
-                quotes = providers.map { it.toQuote() }.sortedBy { it.price },
-            )
+        private fun buildCandles(
+            range: TimeRange,
+            days: Int,
+            now: Long,
+            today: LocalDate,
+        ): Pair<List<Candle>, List<String>> {
+            val size = ceil(days.toDouble() / range.buckets).toInt().coerceAtLeast(1)
+            val candles = ArrayList<Candle>()
+            val labels = ArrayList<String>()
+            var prevClose: Double? = null
+            var start = 0
+            while (start < days) {
+                val end = min(days - 1, start + size - 1)
+                var lo = Double.MAX_VALUE
+                var hi = Double.MIN_VALUE
+                for (day in start..end) {
+                    lo = min(lo, daily[day]); hi = max(hi, daily[day])
+                }
+                val open = prevClose ?: daily[start]
+                val close = daily[end]
+                var high = max(hi, max(open, close))
+                var low = min(lo, min(open, close))
+                if (high == low) { high = close * 1.003; low = close * 0.997 }
+                candles.add(Candle(now + start.toLong() * DAY_MS, open, high, low, close))
+                labels.add(today.plusDays(start.toLong()).format(DAY_MONTH))
+                prevClose = close
+                start += size
+            }
+            return candles to labels
         }
     }
 
-    private class ProviderSim(val provider: Provider, initial: Double) {
-        private var price = initial
-        private val spark = ArrayDeque<Double>()
+    private class ProviderSim(val provider: Provider, initialFactor: Double) {
+        private var factor = initialFactor
 
-        fun reset(routeClose: Double, random: Random) {
-            price = routeClose * (0.94 + random.nextDouble() * 0.16)
-            spark.clear()
-            repeat(WINDOW) { spark.addLast(price) }
+        fun advance(random: Random) {
+            factor = (factor + (random.nextDouble() - 0.5) * 0.01).coerceIn(0.88, 1.12)
         }
 
-        fun advance(random: Random, routeClose: Double) {
-            // Each provider tracks the route with its own spread and jitter.
-            val target = routeClose * (0.92 + provider.id.length % 5 * 0.02)
-            val pull = (target - price) * 0.3
-            val jitter = (random.nextDouble() - 0.5) * routeClose * 0.01
-            price = max(routeClose * 0.5, price + pull + jitter)
-            spark.addLast(price)
-            while (spark.size > WINDOW) spark.removeFirst()
-        }
-
-        fun toQuote(): ProviderQuote {
-            val ref = spark.firstOrNull() ?: price
-            val changePct = if (ref != 0.0) (price - ref) / ref * 100.0 else 0.0
-            return ProviderQuote(provider, price, changePct, spark.toList())
+        fun quote(daily: DoubleArray, days: Int): ProviderQuote {
+            var minPrice = Double.MAX_VALUE
+            for (day in 0 until days) minPrice = min(minPrice, daily[day] * factor)
+            // Sparkline = provider price across the future window (downsampled).
+            val step = max(1, days / 24)
+            val spark = ArrayList<Double>()
+            var day = 0
+            while (day < days) { spark.add(daily[day] * factor); day += step }
+            val changePct = if (spark.size >= 2 && spark.first() != 0.0) {
+                (spark.last() - spark.first()) / spark.first() * 100.0
+            } else 0.0
+            return ProviderQuote(provider, minPrice, changePct, spark)
         }
     }
 
-    companion object {
-        private const val HISTORY = 60
-        private const val WINDOW = 40
+}
 
-        private val DOMESTIC = setOf("GRU", "GIG", "BSB", "REC")
+// ---- File-private simulation constants & helpers (shared by the nested state) ----
 
-        private val SEED_PRICES = mapOf(
-            "GRU-JFK" to 4120.0,
-            "GRU-LIS" to 3380.0,
-            "GRU-MIA" to 2960.0,
-            "GIG-SCL" to 1740.0,
-            "BSB-GRU" to 620.0,
-            "GRU-CDG" to 4890.0,
-            "REC-GRU" to 780.0,
-            "GRU-EZE" to 1290.0,
-        )
+private const val DAYS = 366
+private const val DAY_MS = 86_400_000L
+private val DAY_MONTH: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM")
 
-        private fun seedRoutes(): List<Route> = listOf(
-            Route("GRU-JFK", "GRU", "JFK", "São Paulo", "Nova York"),
-            Route("GRU-LIS", "GRU", "LIS", "São Paulo", "Lisboa"),
-            Route("GRU-MIA", "GRU", "MIA", "São Paulo", "Miami"),
-            Route("GIG-SCL", "GIG", "SCL", "Rio de Janeiro", "Santiago"),
-            Route("BSB-GRU", "BSB", "GRU", "Brasília", "São Paulo"),
-            Route("GRU-CDG", "GRU", "CDG", "São Paulo", "Paris"),
-            Route("REC-GRU", "REC", "GRU", "Recife", "São Paulo"),
-            Route("GRU-EZE", "GRU", "EZE", "São Paulo", "Buenos Aires"),
-        )
+private val SOUTH_AMERICA = setOf("BR", "AR", "CL", "UY", "PY", "PE", "CO")
+private val NORTH_AMERICA = setOf("US", "CA", "MX", "PA")
+private val EUROPE = setOf("PT", "ES", "FR", "GB", "IT", "DE", "NL", "CH", "IE")
 
-        private fun providerCatalog(route: Route): List<Pair<Provider, Double>> = listOf(
-            Provider("latam", "LATAM", ProviderKind.AIRLINE) to 1.00,
-            Provider("gol", "GOL", ProviderKind.AIRLINE) to 0.97,
-            Provider("azul", "Azul", ProviderKind.AIRLINE) to 1.03,
-            Provider("tap", "TAP", ProviderKind.AIRLINE) to 1.06,
-            Provider("decolar", "Decolar", ProviderKind.PLATFORM) to 0.95,
-            Provider("kayak", "Kayak", ProviderKind.PLATFORM) to 0.96,
-            Provider("googleflights", "Google Flights", ProviderKind.PLATFORM) to 0.94,
-            Provider("maxmilhas", "MaxMilhas", ProviderKind.PLATFORM) to 0.92,
-        ).filter { (p, _) ->
-            // Domestic legs drop the long-haul-only carrier.
-            val domestic = route.origin in DOMESTIC && route.destination in DOMESTIC
-            if (domestic) p.id != "tap" else true
-        }
+private fun basePrice(route: Route): Double {
+    val a = route.origin.countryCode
+    val b = route.destination.countryCode
+    val seed = Random(route.id.hashCode())
+    fun inRange(lo: Double, hi: Double) = lo + seed.nextDouble() * (hi - lo)
+    return when {
+        a == b -> inRange(350.0, 1300.0)                                    // doméstico
+        a in SOUTH_AMERICA && b in SOUTH_AMERICA -> inRange(900.0, 2200.0)   // regional
+        a in EUROPE || b in EUROPE -> inRange(3200.0, 5500.0)               // intercontinental EU
+        a in NORTH_AMERICA || b in NORTH_AMERICA -> inRange(2400.0, 4600.0) // Américas longo
+        else -> inRange(1500.0, 4200.0)
     }
+}
+
+private fun providerCatalog(route: Route): List<Provider> {
+    val domestic = route.origin.countryCode == route.destination.countryCode &&
+        route.origin.countryCode == "BR"
+    val all = listOf(
+        Provider("latam", "LATAM", ProviderKind.AIRLINE),
+        Provider("gol", "GOL", ProviderKind.AIRLINE),
+        Provider("azul", "Azul", ProviderKind.AIRLINE),
+        Provider("tap", "TAP", ProviderKind.AIRLINE),
+        Provider("decolar", "Decolar", ProviderKind.PLATFORM),
+        Provider("kayak", "Kayak", ProviderKind.PLATFORM),
+        Provider("googleflights", "Google Flights", ProviderKind.PLATFORM),
+        Provider("maxmilhas", "MaxMilhas", ProviderKind.PLATFORM),
+    )
+    // Domestic BR legs drop the long-haul-only carrier.
+    return if (domestic) all.filter { it.id != "tap" } else all
 }
