@@ -42,7 +42,16 @@ com.travelassistant.app
 
 Para cada par origem→destino que o usuário abre, o `MarketRepository` constrói (sob demanda) uma curva de preço **por dia de embarque futuro** (baseline sazonal + *random walk* limitado) e a avança a cada *tick*, no intervalo configurável (`SettingsRepository.refreshIntervalSeconds` → `flatMapLatest`). O `board(origem, destino, período)` agrupa esses dias em candles OHLC. O `HomeViewModel` combina origem+destino+período+tick e recalcula o board ao vivo.
 
-> **Preços simulados — não há API real conectada.** Não existe API pública oficial do Google Flights (a QPX Express foi encerrada em 2018). Para dados reais, as opções são **Amadeus Self-Service** (oficial, free tier, tem preço por data futura), **SerpApi – Google Flights** (não oficial, faz scraping) ou **Travelpayouts/Aviasales**. Como preço de passagem não muda a cada 30s e essas APIs têm limite de requisições, com dados reais o "feed ao vivo" vira *polling* periódico + histórico salvo. Plugar uma dessas APIs troca basicamente como `PairState.daily` é populado.
+### Dados reais (opcional)
+
+O app roda **simulado por padrão** — sem nenhuma chave, o feed ao vivo funciona como demo. Há **dois provedores reais** já integrados, com **fallback automático para a simulação** se a API falhar:
+
+- **Travelpayouts / Aviasales** — grátis, token simples, recomendado. Veja [`docs/REAL_DATA_TRAVELPAYOUTS.md`](docs/REAL_DATA_TRAVELPAYOUTS.md).
+- **Amadeus Self-Service** — oficial, free tier. Veja [`docs/REAL_DATA_AMADEUS.md`](docs/REAL_DATA_AMADEUS.md).
+
+O `AppContainer` escolhe: Travelpayouts (se houver token) → Amadeus (se houver chave) → simulação. Cada provedor implementa a interface `PriceRepository`, então adicionar outro é isolado.
+
+> Não existe API pública oficial do Google Flights (a QPX Express foi encerrada em 2018); Skyscanner é só para parceiros e Skiplagged não tem API pública. Como preço de passagem não muda a cada 30s e as APIs têm limite de requisições, no modo real o feed vira busca **sob demanda** (não 30s) — a badge no topo indica **DADOS REAIS** vs **SIMULADO**.
 
 ## Como rodar
 

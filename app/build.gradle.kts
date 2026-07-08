@@ -30,6 +30,9 @@ val amadeusClientSecret = secret("amadeus.clientSecret", "AMADEUS_CLIENT_SECRET"
 // "test" (free sandbox) or "production". Defaults to test.
 val amadeusEnv = (localProps.getProperty("amadeus.env") ?: System.getenv("AMADEUS_ENV") ?: "test").trim()
 
+// Travelpayouts (Aviasales) — free, token-only. Preferred free provider.
+val travelpayoutsToken = secret("travelpayouts.token", "TRAVELPAYOUTS_TOKEN")
+
 android {
     namespace = "com.travelassistant.app"
     compileSdk = 35
@@ -50,6 +53,7 @@ android {
         buildConfigField("String", "AMADEUS_CLIENT_ID", "\"$amadeusClientId\"")
         buildConfigField("String", "AMADEUS_CLIENT_SECRET", "\"$amadeusClientSecret\"")
         buildConfigField("String", "AMADEUS_ENV", "\"$amadeusEnv\"")
+        buildConfigField("String", "TRAVELPAYOUTS_TOKEN", "\"$travelpayoutsToken\"")
     }
 
     signingConfigs {

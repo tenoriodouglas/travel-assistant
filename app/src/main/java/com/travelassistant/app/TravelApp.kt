@@ -9,7 +9,9 @@ import com.travelassistant.app.data.AmadeusPriceRepository
 import com.travelassistant.app.data.MarketRepository
 import com.travelassistant.app.data.PriceRepository
 import com.travelassistant.app.data.SettingsRepository
+import com.travelassistant.app.data.TravelpayoutsPriceRepository
 import com.travelassistant.app.data.remote.AmadeusService
+import com.travelassistant.app.data.remote.TravelpayoutsService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,13 +27,20 @@ class AppContainer(context: Context) {
     /** Always available; also the fallback when a real API call fails. */
     val simulatedRepository = MarketRepository(settingsRepository, appScope).apply { start() }
 
-    /** True when Amadeus credentials were provided at build time. */
-    val realDataEnabled: Boolean =
+    private val hasTravelpayouts = BuildConfig.TRAVELPAYOUTS_TOKEN.isNotBlank()
+    private val hasAmadeus =
         BuildConfig.AMADEUS_CLIENT_ID.isNotBlank() && BuildConfig.AMADEUS_CLIENT_SECRET.isNotBlank()
 
-    /** Primary source: real Amadeus data if configured, otherwise the simulation. */
-    val priceRepository: PriceRepository =
-        if (realDataEnabled) {
+    /** True when any real-data provider was configured at build time. */
+    val realDataEnabled: Boolean = hasTravelpayouts || hasAmadeus
+
+    /**
+     * Primary source. Travelpayouts (free) is preferred, then Amadeus, else the simulation.
+     */
+    val priceRepository: PriceRepository = when {
+        hasTravelpayouts ->
+            TravelpayoutsPriceRepository(TravelpayoutsService(BuildConfig.TRAVELPAYOUTS_TOKEN))
+        hasAmadeus ->
             AmadeusPriceRepository(
                 AmadeusService(
                     clientId = BuildConfig.AMADEUS_CLIENT_ID,
@@ -39,9 +48,8 @@ class AppContainer(context: Context) {
                     environment = BuildConfig.AMADEUS_ENV,
                 ),
             )
-        } else {
-            simulatedRepository
-        }
+        else -> simulatedRepository
+    }
 }
 
 class TravelApp : Application() {
