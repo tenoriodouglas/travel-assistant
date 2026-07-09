@@ -23,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.travelassistant.app.ui.home.HomeScreen
 import com.travelassistant.app.ui.navigation.Destination
+import com.travelassistant.app.update.AppUpdater
 import com.travelassistant.app.ui.navigation.TopLevelDestination
 import com.travelassistant.app.ui.settings.SettingsScreen
 import com.travelassistant.app.ui.theme.Background
@@ -32,14 +33,25 @@ import com.travelassistant.app.ui.theme.TravelAssistantTheme
 import com.travelassistant.app.ui.theme.Up
 
 class MainActivity : ComponentActivity() {
+    private lateinit var appUpdater: AppUpdater
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Check Google Play for updates on launch and force an immediate update if available.
+        appUpdater = AppUpdater(this)
+        appUpdater.checkForUpdate()
         setContent {
             TravelAssistantTheme {
                 TravelAssistantApp()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Resume an immediate update that was interrupted (e.g. app backgrounded mid-update).
+        appUpdater.resumeIfInProgress()
     }
 }
 
