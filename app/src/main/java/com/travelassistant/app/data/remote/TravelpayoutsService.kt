@@ -36,7 +36,7 @@ class TravelpayoutsService(private val token: String) {
         return parsed.data.mapNotNull { t ->
             if (t.price <= 0.0) return@mapNotNull null
             val date = parseDate(t.departure_at) ?: return@mapNotNull null
-            Ticket(date, t.price, t.airline)
+            Ticket(date, t.price, t.airline, t.link.ifBlank { null })
         }
     }
 
@@ -64,7 +64,13 @@ class TravelpayoutsService(private val token: String) {
     private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
 }
 
-data class Ticket(val date: LocalDate, val price: Double, val airline: String)
+data class Ticket(
+    val date: LocalDate,
+    val price: Double,
+    val airline: String,
+    /** Aviasales search path (relative), or null. */
+    val link: String? = null,
+)
 
 @Serializable
 private data class PricesForDatesResponse(
@@ -78,4 +84,5 @@ private data class TicketDto(
     val price: Double = 0.0,
     val airline: String = "",
     val departure_at: String = "",
+    val link: String = "",
 )

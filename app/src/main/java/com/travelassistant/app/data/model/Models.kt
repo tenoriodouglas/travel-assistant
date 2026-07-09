@@ -31,6 +31,13 @@ enum class TimeRange(val label: String, val days: Int, val buckets: Int) {
     Y1("1A", 360, 24),
 }
 
+/** How much time each candle aggregates. Each candle shows the cheapest fare in its bucket. */
+enum class Granularity(val label: String) {
+    DAY("Dia"),
+    WEEK("Semana"),
+    MONTH("Mês"),
+}
+
 enum class ProviderKind { AIRLINE, PLATFORM }
 
 /** An airline or a ticket-buying platform whose price we track. */
@@ -63,6 +70,8 @@ data class ProviderQuote(
     val price: Double,
     val changePct: Double,
     val spark: List<Double>,
+    /** Deep link to buy this fare, or null when the provider has no link. */
+    val bookingUrl: String? = null,
 )
 
 /**
@@ -73,6 +82,7 @@ data class ProviderQuote(
 data class RouteBoard(
     val route: Route,
     val range: TimeRange,
+    val granularity: Granularity,
     val candles: List<Candle>,
     val xLabels: List<String>,      // departure date label per candle (dd/MM)
     val price: Double,              // cheapest price in the window (actionable)

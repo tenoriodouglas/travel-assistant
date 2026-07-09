@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +45,7 @@ import com.travelassistant.app.data.model.RouteBoard
 import com.travelassistant.app.ui.components.ChangeChip
 import com.travelassistant.app.ui.components.ChartMode
 import com.travelassistant.app.ui.components.AirportSearchField
+import com.travelassistant.app.ui.components.GranularitySelector
 import com.travelassistant.app.ui.components.PriceChart
 import com.travelassistant.app.ui.components.RangeSelector
 import com.travelassistant.app.ui.components.Sparkline
@@ -82,6 +84,7 @@ fun HomeScreen(
     val origin by viewModel.origin.collectAsStateWithLifecycle()
     val destination by viewModel.destination.collectAsStateWithLifecycle()
     val range by viewModel.range.collectAsStateWithLifecycle()
+    val granularity by viewModel.granularity.collectAsStateWithLifecycle()
     val state by viewModel.boardState.collectAsStateWithLifecycle()
 
     Column(
@@ -116,7 +119,18 @@ fun HomeScreen(
         )
 
         Spacer(Modifier.height(16.dp))
+        FieldLabel("Período")
+        Spacer(Modifier.height(6.dp))
         RangeSelector(selected = range, onSelect = viewModel::setRange, modifier = Modifier.fillMaxWidth())
+
+        Spacer(Modifier.height(12.dp))
+        FieldLabel("Cada vela")
+        Spacer(Modifier.height(6.dp))
+        GranularitySelector(
+            selected = granularity,
+            onSelect = viewModel::setGranularity,
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         Spacer(Modifier.height(12.dp))
         PopularRow(onPick = viewModel::pickPopular)
@@ -131,6 +145,11 @@ fun HomeScreen(
         }
         Spacer(Modifier.height(28.dp))
     }
+}
+
+@Composable
+private fun FieldLabel(text: String) {
+    Text(text, color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium)
 }
 
 @Composable
@@ -368,6 +387,8 @@ private fun Stat(label: String, value: String, color: androidx.compose.ui.graphi
 @Composable
 private fun ChartCard(board: RouteBoard) {
     var mode by remember { mutableStateOf(ChartMode.CANDLES) }
+    // Reset the tapped-candle selection whenever the underlying data changes.
+    var selected by remember(board.candles) { mutableStateOf<Int?>(null) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -381,20 +402,52 @@ private fun ChartCard(board: RouteBoard) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                Text("Preço por data de embarque", color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text("Menor preço por ${board.granularity.label.lowercase()}", color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 Text("${board.range.label} • datas futuras", color = TextMuted, fontSize = 11.sp)
             }
             ModeToggle(mode = mode, onModeChange = { mode = it })
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+        SelectedBucketReadout(board = board, index = selected)
+        Spacer(Modifier.height(6.dp))
         PriceChart(
             candles = board.candles,
             mode = mode,
             xLabels = board.xLabels,
+            selectedIndex = selected,
+            onSelectCandle = { selected = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(250.dp),
         )
+    }
+}
+
+@Composable
+private fun SelectedBucketReadout(board: RouteBoard, index: Int?) {
+    val i = index?.takeIf { it in board.candles.indices }
+    val label: String
+    val value: String
+    if (i == null) {
+        label = "Toque numa vela para ver o menor preço do trecho"
+        value = ""
+    } else {
+        label = "Menor em ${board.xLabels.getOrNull(i) ?: "-"}"
+        value = formatMoney(board.candles[i].low, board.route.currency)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceElevated)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = TextMuted, fontSize = 12.sp)
+        if (value.isNotEmpty()) {
+            Text(value, color = Up, fontSize = 14.sp, style = MonoNumber, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
@@ -431,7 +484,7 @@ private fun ProvidersSection(board: RouteBoard) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text("Companhias & Plataformas", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
-        Text("Menor preço de cada uma no período • do mais barato ao mais caro", color = TextMuted, fontSize = 12.sp)
+        Text("Menor preço de cada uma no período • toque para abrir a compra", color = TextMuted, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
         val bestId = board.bestQuote?.provider?.id
         board.quotes.forEach { quote ->
@@ -443,9 +496,14 @@ private fun ProvidersSection(board: RouteBoard) {
 @Composable
 private fun ProviderRow(quote: ProviderQuote, currency: String, isBest: Boolean) {
     val kindColor = if (quote.provider.kind == ProviderKind.AIRLINE) Info else Accent
+    val uriHandler = LocalUriHandler.current
+    val url = quote.bookingUrl
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (url != null) Modifier.clickable { runCatching { uriHandler.openUri(url) } } else Modifier,
+            )
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -467,8 +525,8 @@ private fun ProviderRow(quote: ProviderQuote, currency: String, isBest: Boolean)
             }
             Spacer(Modifier.height(2.dp))
             Text(
-                text = if (quote.provider.kind == ProviderKind.AIRLINE) "Companhia aérea" else "Plataforma",
-                color = TextMuted,
+                text = if (url != null) "Toque para comprar ↗" else "Companhia aérea",
+                color = if (url != null) Up else TextMuted,
                 fontSize = 11.sp,
             )
         }

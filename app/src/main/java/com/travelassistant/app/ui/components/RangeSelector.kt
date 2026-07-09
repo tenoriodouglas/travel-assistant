@@ -13,6 +13,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
+import com.travelassistant.app.data.model.Granularity
 import com.travelassistant.app.data.model.TimeRange
 import com.travelassistant.app.ui.theme.Background
 import com.travelassistant.app.ui.theme.SurfaceElevated
@@ -26,25 +28,58 @@ fun RangeSelector(
     onSelect: (TimeRange) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    SegmentedRow(
+        items = TimeRange.entries,
+        isSelected = { it == selected },
+        label = { it.label },
+        onSelect = onSelect,
+        modifier = modifier,
+    )
+}
+
+/** Buttons selecting the candle granularity (day / week / month). */
+@Composable
+fun GranularitySelector(
+    selected: Granularity,
+    onSelect: (Granularity) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SegmentedRow(
+        items = Granularity.entries,
+        isSelected = { it == selected },
+        label = { it.label },
+        onSelect = onSelect,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun <T> SegmentedRow(
+    items: List<T>,
+    isSelected: (T) -> Boolean,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(SurfaceElevated)
             .padding(4.dp),
     ) {
-        TimeRange.entries.forEach { range ->
-            val isSelected = range == selected
+        items.forEach { item ->
+            val sel = isSelected(item)
             Text(
-                text = range.label,
-                color = if (isSelected) Background else TextSecondary,
+                text = label(item),
+                color = if (sel) Background else TextSecondary,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(7.dp))
-                    .background(if (isSelected) Up else androidx.compose.ui.graphics.Color.Transparent)
-                    .clickable { onSelect(range) }
+                    .background(if (sel) Up else Color.Transparent)
+                    .clickable { onSelect(item) }
                     .padding(vertical = 8.dp),
             )
         }
