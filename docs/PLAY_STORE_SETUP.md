@@ -42,7 +42,7 @@ Em **Settings → Secrets and variables → Actions**, crie:
 
 A API da Play **não cria o app** nem aceita o primeiríssimo upload. Antes de o CD funcionar:
 
-1. Crie o app no Play Console com o `applicationId` **`com.travelassistant.app`**.
+1. Crie o app no Play Console com o `applicationId` **`br.com.travelassistant.app`**.
 2. Faça **um** upload manual de um AAB assinado com a mesma upload key (pode ser o artifact gerado por um run do workflow) na faixa desejada e preencha os dados obrigatórios da ficha.
 3. A partir daí, todo merge na `main` publica automaticamente na faixa `alpha`.
 

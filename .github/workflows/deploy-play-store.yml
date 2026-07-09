@@ -73,7 +73,7 @@ jobs:
           NODE_OPTIONS: --no-deprecation
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: com.travelassistant.app
+          packageName: br.com.travelassistant.app
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
           tracks: alpha
           status: completed

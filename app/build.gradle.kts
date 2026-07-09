@@ -38,7 +38,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.travelassistant.app"
+        applicationId = "br.com.travelassistant.app"
         minSdk = 26
         targetSdk = 35
         // CI injects -PversionCodeOverride=<run_number + offset>; falls back to 1 locally.
