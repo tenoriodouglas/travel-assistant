@@ -18,6 +18,8 @@ jobs:
     env:
       # When the secret is set, the debug APK is built with real Travelpayouts data.
       HAS_TP: ${{ secrets.TRAVELPAYOUTS_TOKEN != '' }}
+      # When set, also produce a signed release AAB artifact (build only — never published).
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,3 +58,32 @@ jobs:
           name: lint-report
           path: app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
+
+      # --- Signed release AAB (build only, NOT published) ---
+      # Produces the AAB you upload manually for the app's first Play release.
+      # Publishing to Google Play happens only in deploy-play-store.yml, on merge to main.
+      - name: Decode keystore
+        if: env.HAS_KEYSTORE == 'true'
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > upload-keystore.jks
+
+      - name: Create key.properties
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          cat > key.properties << EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Build signed release AAB
+        if: env.HAS_KEYSTORE == 'true'
+        run: ./gradlew :app:bundleRelease
+
+      - name: Upload release AAB
+        if: env.HAS_KEYSTORE == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
