@@ -18,6 +18,7 @@ jobs:
       # artifact; só o que depende deles é pulado.
       HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
       HAS_PLAY_SA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+      HAS_TP: ${{ secrets.TRAVELPAYOUTS_TOKEN != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +31,11 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
+
+      # Embed the real-data token so the published app shows real prices.
+      - name: Configure Travelpayouts token
+        if: env.HAS_TP == 'true'
+        run: echo "travelpayouts.token=${{ secrets.TRAVELPAYOUTS_TOKEN }}" >> local.properties
 
       # Keystore decodificado na raiz do projeto — onde rootProject.file()
       # do app/build.gradle.kts procura (storeFile=upload-keystore.jks).
