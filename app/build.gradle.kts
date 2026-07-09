@@ -94,6 +94,12 @@ android {
         compose = true
         buildConfig = true
     }
+    lint {
+        // The app is Compose-only (ComponentActivity, no Fragments); registerForActivityResult
+        // here is valid and does not require androidx.fragment 1.3.0. This check is a false
+        // positive triggered by a transitive fragment version.
+        disable += "InvalidFragmentVersionForActivityResult"
+    }
 }
 
 dependencies {
