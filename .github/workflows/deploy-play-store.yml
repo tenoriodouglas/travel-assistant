@@ -65,7 +65,7 @@ jobs:
           path: app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
 
-      - name: Deploy to Google Play (Alpha — teste fechado)
+      - name: Deploy to Google Play (Internal testing)
         if: env.HAS_PLAY_SA == 'true' && env.HAS_KEYSTORE == 'true'
         uses: r0adkll/upload-google-play@v1
         env:
@@ -75,7 +75,7 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: br.com.travelassistant.app
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
-          tracks: alpha
+          tracks: internal
           status: completed
 
       - name: Skip deploy notice
