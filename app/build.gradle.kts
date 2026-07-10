@@ -81,6 +81,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Bundle native debug symbols into the AAB for readable crash/ANR reports
+            // (silences Play's "no debug symbols" warning).
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
         }
     }
     compileOptions {
