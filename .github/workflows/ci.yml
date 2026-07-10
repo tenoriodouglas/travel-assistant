@@ -4,8 +4,16 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'store_assets/**'
+      - '**/*.md'
   push:
     branches-ignore: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'store_assets/**'
+      - '**/*.md'
   workflow_dispatch: {}
 
 concurrency:
