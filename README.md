@@ -6,9 +6,11 @@ A ideia é acompanhar a oscilação de preço de uma rota da mesma forma que se 
 
 ## Telas
 
-| Mercados | Detalhe da rota | Ajustes |
-|----------|-----------------|---------|
-| Lista de rotas (os "pares"), com sparkline de tendência, preço e variação. Busca por aeroporto/cidade. | Preço grande, variação, estatísticas (abertura, máx, mín, melhor oferta), gráfico de **velas/linha** com grade de preços, e breakdown por companhia/plataforma ordenado do mais barato ao mais caro (com selo **MELHOR**). | Intervalo do feed ao vivo (slider 5s–300s + presets 10/15/30/60/120s). Padrão **30s**. |
+| Preços (Home) | Ajustes |
+|---------------|---------|
+| Campo **Origem** + campo **Destino** com **autocomplete** (digita a cidade → sugestões → clica). Botões de **período futuro** estilo cripto (7D / 15D / 1M / 3M / 6M / 1A) = janela de datas de embarque. O gráfico de **velas/linha** mostra o **preço por data de embarque** e atualiza automático ao trocar rota/período, com breakdown por companhia/plataforma (selo **MELHOR** no mais barato). | Intervalo do feed ao vivo (slider 5s–300s + presets). Padrão **30s**. |
+
+Cada tick do feed re-samplea os preços, então a curva inteira oscila ao vivo — a sensação de terminal de trade, aplicada a datas futuras de voo.
 
 ## Visual
 
@@ -21,28 +23,35 @@ MVVM + Jetpack Compose, sem frameworks de DI pesados (container manual em `AppCo
 ```
 com.travelassistant.app
 ├── TravelApp.kt              # Application + AppContainer (DI manual) + DataStore
-├── MainActivity.kt           # NavHost + bottom navigation (Mercados / Ajustes)
+├── MainActivity.kt           # NavHost + bottom navigation (Preços / Ajustes)
 ├── data
-│   ├── model/Models.kt       # Route, Candle, PricePoint, Provider, ProviderQuote, RouteMarket, RouteDetail
-│   ├── MarketRepository.kt   # Motor do feed ao vivo (random walk por rota e por provider)
+│   ├── model/Models.kt       # Airport, Route, TimeRange, Candle, Provider, ProviderQuote, RouteBoard
+│   ├── Airports.kt           # Catálogo de aeroportos + busca (autocomplete, sem acento)
+│   ├── MarketRepository.kt   # Motor do feed: curva de preço por data futura, por par, ao vivo
 │   └── SettingsRepository.kt # Intervalo do feed persistido em DataStore
 ├── ui
 │   ├── theme/                # Paleta, tipografia e tema (estilo trading)
-│   ├── components/           # PriceChart (velas/linha), Sparkline, LIVE, chips
-│   ├── markets/              # MarketsScreen + MarketsViewModel
-│   ├── detail/               # RouteDetailScreen + RouteDetailViewModel
+│   ├── components/           # PriceChart, Sparkline, AirportSearchField, RangeSelector, LIVE, chips
+│   ├── home/                 # HomeScreen (busca + gráfico) + HomeViewModel
 │   ├── settings/             # SettingsScreen + SettingsViewModel
 │   └── navigation/           # Destinos e bottom bar
 └── util/Format.kt            # Formatação de moeda (pt-BR) e porcentagem
 ```
 
-### Feed ao vivo
+### Feed ao vivo & dados
 
-`MarketRepository` mantém, em memória, uma série de candles OHLC e cotações por provider para cada rota. Um único loop de coroutine avança o "tick" no intervalo escolhido pelo usuário (`SettingsRepository.refreshIntervalSeconds` → `flatMapLatest`, então mudar o intervalo reinicia a cadência na hora). Os preços evoluem por um *random walk* limitado.
+Para cada par origem→destino que o usuário abre, o `MarketRepository` constrói (sob demanda) uma curva de preço **por dia de embarque futuro** (baseline sazonal + *random walk* limitado) e a avança a cada *tick*, no intervalo configurável (`SettingsRepository.refreshIntervalSeconds` → `flatMapLatest`). O `board(origem, destino, período)` agrupa esses dias em candles OHLC. O `HomeViewModel` combina origem+destino+período+tick e recalcula o board ao vivo.
 
-Os `ViewModel`s expõem `StateFlow`s que as telas coletam com `collectAsStateWithLifecycle`, então cada tick atualiza os gráficos automaticamente.
+### Dados reais (opcional)
 
-> **Preços simulados.** Os valores são gerados localmente para demonstrar a interface. A arquitetura é *API-shaped*: trocar a simulação por uma API real de preços de passagens exige mexer basicamente no método `tick()` do `MarketRepository`.
+O app roda **simulado por padrão** — sem nenhuma chave, o feed ao vivo funciona como demo. Há **dois provedores reais** já integrados, com **fallback automático para a simulação** se a API falhar:
+
+- **Travelpayouts / Aviasales** — grátis, token simples, recomendado. Veja [`docs/REAL_DATA_TRAVELPAYOUTS.md`](docs/REAL_DATA_TRAVELPAYOUTS.md).
+- **Amadeus Self-Service** — oficial, free tier. Veja [`docs/REAL_DATA_AMADEUS.md`](docs/REAL_DATA_AMADEUS.md).
+
+O `AppContainer` escolhe: Travelpayouts (se houver token) → Amadeus (se houver chave) → simulação. Cada provedor implementa a interface `PriceRepository`, então adicionar outro é isolado.
+
+> Não existe API pública oficial do Google Flights (a QPX Express foi encerrada em 2018); Skyscanner é só para parceiros e Skiplagged não tem API pública. Como preço de passagem não muda a cada 30s e as APIs têm limite de requisições, no modo real o feed vira busca **sob demanda** (não 30s) — a badge no topo indica **DADOS REAIS** vs **SIMULADO**.
 
 ## Como rodar
 

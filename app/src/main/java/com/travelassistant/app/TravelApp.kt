@@ -5,20 +5,43 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
-import com.travelassistant.app.data.MarketRepository
+import com.travelassistant.app.data.AmadeusPriceRepository
+import com.travelassistant.app.data.PriceRepository
 import com.travelassistant.app.data.SettingsRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import com.travelassistant.app.data.TravelpayoutsPriceRepository
+import com.travelassistant.app.data.remote.AmadeusService
+import com.travelassistant.app.data.remote.TravelpayoutsService
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 /** Lightweight manual DI container — no framework needed for an app this size. */
 class AppContainer(context: Context) {
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
     val settingsRepository = SettingsRepository(context.dataStore)
-    val marketRepository = MarketRepository(settingsRepository, appScope).apply { start() }
+
+    private val hasTravelpayouts = BuildConfig.TRAVELPAYOUTS_TOKEN.isNotBlank()
+    private val hasAmadeus =
+        BuildConfig.AMADEUS_CLIENT_ID.isNotBlank() && BuildConfig.AMADEUS_CLIENT_SECRET.isNotBlank()
+
+    /** True when a real-data provider was configured at build time. */
+    val realDataEnabled: Boolean = hasTravelpayouts || hasAmadeus
+
+    /**
+     * Real-data provider — Travelpayouts (free) preferred, then Amadeus. Null when none is
+     * configured: the app shows real prices only, never a simulation.
+     */
+    val priceRepository: PriceRepository? = when {
+        hasTravelpayouts ->
+            TravelpayoutsPriceRepository(TravelpayoutsService(BuildConfig.TRAVELPAYOUTS_TOKEN))
+        hasAmadeus ->
+            AmadeusPriceRepository(
+                AmadeusService(
+                    clientId = BuildConfig.AMADEUS_CLIENT_ID,
+                    clientSecret = BuildConfig.AMADEUS_CLIENT_SECRET,
+                    environment = BuildConfig.AMADEUS_ENV,
+                ),
+            )
+        else -> null
+    }
 }
 
 class TravelApp : Application() {
