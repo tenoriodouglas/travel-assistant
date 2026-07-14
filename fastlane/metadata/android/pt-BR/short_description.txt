@@ -1,0 +1,1 @@
+Preços de passagens aéreas em gráficos estilo trading, por data e companhia.

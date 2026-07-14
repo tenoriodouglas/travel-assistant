@@ -1,0 +1,18 @@
+O Travel Assistant mostra os preços de passagens aéreas como uma tela de trading: gráficos de velas e de linha, atualização ao vivo e a evolução do preço por data futura de partida.
+
+Escolha origem e destino com busca automática de cidades e acompanhe a variação das tarifas do jeito que você já conhece dos apps de mercado financeiro.
+
+RECURSOS
+• Gráfico de preços por data de partida, com velas (OHLC) ou linha.
+• Botões de período no estilo dos apps de trading (dias, meses, até 1 ano à frente).
+• Granularidade ajustável: cada vela pode representar o menor preço do dia, da semana ou do mês.
+• Busca dinâmica de origem e destino com sugestões enquanto você digita.
+• Lista de tarifas por companhia aérea, com link direto para comprar no site de vendas.
+• Dados reais de preços fornecidos por parceiros de busca de voos.
+
+SEM COMPLICAÇÃO
+• Sem cadastro e sem login.
+• Não coletamos dados pessoais.
+• Sem anúncios.
+
+Os preços são fornecidos por parceiros de busca de voos e podem variar até a finalização da compra no site do vendedor.
