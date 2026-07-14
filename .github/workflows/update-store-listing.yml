@@ -1,0 +1,59 @@
+name: Update Play Store listing
+
+# Envia título, ícone, feature graphic e descrições para a ficha da Play Store
+# (Ficha da loja principal), usando a service account já configurada.
+#
+# É um workflow MANUAL (workflow_dispatch): não roda em push e nunca bloqueia o
+# deploy do app. Rode em Actions > "Update Play Store listing" > Run workflow.
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: play-store-listing
+  cancel-in-progress: false
+
+jobs:
+  update-listing:
+    runs-on: ubuntu-latest
+    env:
+      HAS_PLAY_SA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Abortar se faltar a service account
+        if: env.HAS_PLAY_SA != 'true'
+        run: |
+          echo "::error::Secret PLAY_SERVICE_ACCOUNT_JSON não configurado. Sem ele não é possível atualizar a ficha."
+          exit 1
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: false
+
+      - name: Instalar fastlane
+        run: gem install fastlane -N
+
+      - name: Gravar service account
+        run: |
+          cat > play-sa.json << 'EOF'
+          ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          EOF
+
+      # Envia SOMENTE metadados + imagens da ficha (nada de APK/AAB).
+      # changes_not_sent_for_review: deixa as mudanças prontas para você revisar
+      # e publicar no Play Console, evitando erro quando o app ainda está em revisão.
+      - name: Enviar ficha da loja (fastlane supply)
+        run: |
+          fastlane supply \
+            --package_name br.com.travelassistant.app \
+            --json_key play-sa.json \
+            --metadata_path fastlane/metadata/android \
+            --skip_upload_apk true \
+            --skip_upload_aab true \
+            --skip_upload_changelogs true \
+            --changes_not_sent_for_review true
+
+      - name: Limpar credenciais
+        if: always()
+        run: rm -f play-sa.json

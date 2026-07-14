@@ -7,12 +7,16 @@ on:
     paths-ignore:
       - 'docs/**'
       - 'store_assets/**'
+      - 'fastlane/**'
+      - '.github/workflows/update-store-listing.yml'
       - '**/*.md'
   push:
     branches-ignore: [main]
     paths-ignore:
       - 'docs/**'
       - 'store_assets/**'
+      - 'fastlane/**'
+      - '.github/workflows/update-store-listing.yml'
       - '**/*.md'
   workflow_dispatch: {}
 
